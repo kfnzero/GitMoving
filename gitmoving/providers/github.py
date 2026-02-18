@@ -1,6 +1,6 @@
 """GitHub provider adapter using PyGithub."""
 
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urlparse
 
 from github import Github, GithubException, Auth
@@ -91,6 +91,34 @@ class GitHubProvider(BaseProvider):
             default_branch=repo.default_branch,
             description=repo.description,
         )
+
+    def list_repos(self, owner: str) -> List[RepoInfo]:
+        """List all repositories for a user or organisation."""
+        try:
+            me = self._client.get_user()
+            if owner.lower() == me.login.lower():
+                raw_repos = me.get_repos(type="all")
+            else:
+                org = self._client.get_organization(owner)
+                raw_repos = org.get_repos(type="all")
+        except GithubException as exc:
+            raise ValueError(
+                f"Cannot list repositories for '{owner}': "
+                f"{exc.data.get('message', str(exc))}"
+            ) from exc
+
+        result = []
+        for repo in raw_repos:
+            result.append(RepoInfo(
+                name=repo.name,
+                full_name=repo.full_name,
+                clone_url=repo.clone_url,
+                ssh_url=repo.ssh_url,
+                private=repo.private,
+                default_branch=repo.default_branch or "main",
+                description=repo.description,
+            ))
+        return sorted(result, key=lambda r: r.name.lower())
 
     def get_authenticated_clone_url(self, repo: RepoInfo) -> str:
         """Return HTTPS URL with embedded PAT token."""

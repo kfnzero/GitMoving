@@ -15,6 +15,7 @@ setup(
         "keyring>=24.3.0",
         "pydantic>=2.5.0",
         "python-dotenv>=1.0.0",
+        "textual>=0.47.0",
     ],
     entry_points={
         "console_scripts": [

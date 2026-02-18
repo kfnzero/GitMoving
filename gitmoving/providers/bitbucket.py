@@ -1,6 +1,6 @@
 """Bitbucket Cloud provider adapter using the Bitbucket REST API v2."""
 
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urlparse
 
 import requests
@@ -109,6 +109,47 @@ class BitbucketProvider(BaseProvider):
             default_branch=data.get("mainbranch", {}).get("name", "main"),
             description=data.get("description"),
         )
+
+    def list_repos(self, owner: str) -> List[RepoInfo]:
+        """List all repositories in a Bitbucket workspace (with pagination)."""
+        result = []
+        next_url: Optional[str] = f"/repositories/{owner}"
+
+        while next_url:
+            try:
+                data = self._get(next_url)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Cannot list repositories for '{owner}': {exc}"
+                ) from exc
+
+            for item in data.get("values", []):
+                clone_url = ""
+                ssh_url = ""
+                for link in item.get("links", {}).get("clone", []):
+                    if link["name"] == "https":
+                        clone_url = link["href"]
+                    elif link["name"] == "ssh":
+                        ssh_url = link["href"]
+                mainbranch = item.get("mainbranch") or {}
+                result.append(RepoInfo(
+                    name=item["name"],
+                    full_name=item["full_name"],
+                    clone_url=clone_url,
+                    ssh_url=ssh_url,
+                    private=item.get("is_private", True),
+                    default_branch=mainbranch.get("name", "main"),
+                    description=item.get("description"),
+                ))
+
+            raw_next = data.get("next")
+            if raw_next:
+                # Store only the path+query portion to keep _get() happy
+                next_url = raw_next.replace(self._api_base, "")
+            else:
+                next_url = None
+
+        return sorted(result, key=lambda r: r.name.lower())
 
     def get_authenticated_clone_url(self, repo: RepoInfo) -> str:
         """Embed username:app_password into the HTTPS clone URL."""

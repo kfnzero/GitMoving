@@ -1,6 +1,6 @@
 """GitLab provider adapter using python-gitlab."""
 
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urlparse
 
 import gitlab
@@ -87,6 +87,47 @@ class GitLabProvider(BaseProvider):
             default_branch=project.default_branch or "main",
             description=project.description,
         )
+
+    def list_repos(self, owner: str) -> List[RepoInfo]:
+        """List all projects in a group or for a user."""
+        projects = []
+        try:
+            # Try as a group first
+            group = self._client.groups.get(owner)
+            raw = group.projects.list(all=True, include_subgroups=False)
+            # group.projects returns GroupProject; fetch full Project for URLs
+            for gp in raw:
+                try:
+                    p = self._client.projects.get(gp.id)
+                    projects.append(p)
+                except Exception:
+                    pass
+        except Exception:
+            # Fall back to listing owned projects filtered by namespace
+            try:
+                raw = self._client.projects.list(owned=True, all=True)
+                projects = [
+                    p for p in raw
+                    if p.namespace.get("path", "").lower() == owner.lower()
+                ] or list(raw)
+            except Exception as exc:
+                raise ValueError(
+                    f"Cannot list repositories for '{owner}': {exc}"
+                ) from exc
+
+        result = []
+        for p in projects:
+            result.append(RepoInfo(
+                name=p.name,
+                full_name=p.path_with_namespace,
+                clone_url=p.http_url_to_repo,
+                ssh_url=p.ssh_url_to_repo,
+                private=p.visibility == "private",
+                default_branch=getattr(p, "default_branch", None) or "main",
+                description=getattr(p, "description", None),
+                topics=getattr(p, "topics", []) or [],
+            ))
+        return sorted(result, key=lambda r: r.name.lower())
 
     def get_authenticated_clone_url(self, repo: RepoInfo) -> str:
         """Return HTTPS URL with embedded PAT token (oauth2 username)."""

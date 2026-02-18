@@ -263,5 +263,29 @@ def auth_status(provider, label):
         console.print(f"[yellow]No saved credentials[/yellow] for [bold]{provider}[/bold] (label: {label})")
 
 
+# ---------------------------------------------------------------------------
+# ui command – launch the interactive Textual TUI
+# ---------------------------------------------------------------------------
+
+@main.command()
+def ui():
+    """
+    Launch the interactive Terminal UI.
+
+    Provides a three-tab interface:
+      Setup        – configure source / destination platforms and credentials
+      Repositories – browse all repos, see destination status, select for migration
+      Migration    – run selected migrations with real-time progress tracking
+
+    \b
+    Keyboard shortcuts inside the UI:
+      q         Quit
+      Ctrl+R    Reload repository list
+      Tab / ←→  Navigate between tabs
+    """
+    from .ui.app import GitMovingApp
+    GitMovingApp().run()
+
+
 if __name__ == "__main__":
     main()

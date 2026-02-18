@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 from ..auth.base import Credentials
 
@@ -94,6 +94,21 @@ class BaseProvider(ABC):
 
         Example:
             https://<token>@github.com/owner/repo.git
+        """
+
+    @abstractmethod
+    def list_repos(self, owner: str) -> List[RepoInfo]:
+        """
+        List all repositories accessible under the given owner/org/namespace.
+
+        Args:
+            owner: Username or organisation/group name.
+
+        Returns:
+            List of RepoInfo objects, sorted by name.
+
+        Raises:
+            ValueError: If the owner does not exist or is not accessible.
         """
 
     def repo_exists(self, owner: str, repo_name: str) -> bool:
