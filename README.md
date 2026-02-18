@@ -19,40 +19,47 @@
 ```
 GitMoving/
 ├── gitmoving/
-│   ├── cli.py              # CLI 進入點 (click)
+│   ├── cli.py              # CLI 進入點 (click)：migrate / auth / ui
 │   ├── auth/
 │   │   ├── base.py         # 憑證基底類別 + keyring 儲存
 │   │   ├── github.py       # GitHub PAT 驗證
 │   │   ├── gitlab.py       # GitLab PAT 驗證
 │   │   └── bitbucket.py    # Bitbucket App Password 驗證
 │   ├── providers/
-│   │   ├── base.py         # BaseProvider 抽象介面
+│   │   ├── base.py         # BaseProvider 抽象介面（含 list_repos）
 │   │   ├── github.py       # GitHub API 操作 (PyGithub)
 │   │   ├── gitlab.py       # GitLab API 操作 (python-gitlab)
 │   │   └── bitbucket.py    # Bitbucket API 操作 (requests)
 │   ├── migrator/
 │   │   └── engine.py       # 遷移流程核心 (clone → create → push)
+│   ├── ui/
+│   │   ├── __init__.py
+│   │   └── app.py          # Textual TUI 三分頁應用程式
 │   └── utils/
 │       └── git.py          # git 指令包裝層
 ├── requirements.txt
 └── setup.py
 ```
 
-### 遷移流程
+### 遷移流程（共用核心）
 
 ```
 [使用者]
    │
-   ▼
-CLI (gitmoving migrate ...)
+   ├─── gitmoving migrate ...     ← CLI 單一 Repo
    │
-   ├─ 1. 驗證來源平台憑證
-   ├─ 2. 驗證目標平台憑證
-   ├─ 3. 取得來源 Repo 資訊
-   ├─ 4. 在目標平台建立 Private Repo（若不存在）
-   ├─ 5. git clone --mirror  (完整複製所有 branch / tag / commit)
-   ├─ 6. git push --mirror   (推送到目標，保留所有歷史)
-   └─ 7. 完成！（權限設定由人工後續處理）
+   └─── gitmoving ui             ← TUI 多 Repo 批次
+          │
+          ▼
+   ├─ 1. 驗證來源 / 目標平台憑證
+   ├─ 2. list_repos() 列舉來源所有 Repo
+   ├─ 3. repo_exists() 檢查目標狀態
+   ├─ 4. 使用者選取後 → 逐一執行：
+   │     ├─ get_repo()       取得 Repo 詳情
+   │     ├─ create_repo()    建立目標 Repo（不存在時）
+   │     ├─ clone --mirror   完整鏡像複製
+   │     └─ push --mirror    推送至目標
+   └─ 5. 完成（顯示每個 Repo 的 branch/tag 數量與狀態）
 ```
 
 ---
@@ -66,6 +73,98 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 pip install -e .
 ```
+
+---
+
+## 互動式 TUI（終端機圖形介面）
+
+```bash
+gitmoving ui
+```
+
+提供三分頁的視覺化操作介面，適合**批次搬移整個組織的所有 Repo**。
+
+### 分頁一：⚙ Setup — 設定來源與目標
+
+```
+◀ Source Platform
+  Platform:   [ GitHub ▼ ]
+  Owner/Org:  [ my-org         ]   ← 用戶名或組織名
+  Token:      [ ••••••••••••   ]   ← PAT（可留空，自動讀 keyring / 環境變數）
+  Username:   [ Bitbucket 專用  ]
+  Base URL:   [ 自架 URL 選填   ]
+
+▶ Destination Platform
+  Platform:   [ GitLab ▼ ]
+  Owner/Org:  [ new-group       ]   ← 留空則使用 token 擁有者
+  Token:      [ 留空重用來源     ]
+  ...
+
+                          [ Load Repositories → ]
+```
+
+點擊 **Load Repositories** 後，系統會在背景執行緒中：
+1. 同時驗證來源與目標憑證
+2. 列出來源 owner 下的所有 Repo
+3. 逐一檢查目標平台是否已存在同名 Repo
+4. 自動切換至 Repositories 分頁
+
+---
+
+### 分頁二：📋 Repositories — 確認並選取
+
+```
+[☑ All]  [☐ None]                    [▶ Migrate Selected]
+25 repositories · 18 selected · click a row to toggle
+──────────────────────────────────────────────────────────────────
+  ☑  api-service    main    🔒 private   ✓ exists   API gateway
+  ☑  frontend       main    🔒 private   ✗ new      React SPA
+  ☐  legacy-app     master  🔒 private   ✓ exists   (未選取)
+  ☑  auth-service   main    🔒 private   ✗ new      OAuth2 服務
+  ☑  infra-scripts  main    🌐 public    ✗ new      Terraform
+```
+
+| 欄位 | 說明 |
+|------|------|
+| ☑ / ☐ | 是否納入本次遷移，點擊列即可切換 |
+| Destination | `✓ exists` = 目標已有此 Repo；`✗ new` = 將自動建立 |
+| 🔒 / 🌐 | 來源 Repo 的公/私設定（目標一律建為 private） |
+
+選好後點 **▶ Migrate Selected** 開始遷移。
+
+---
+
+### 分頁三：🚀 Migration — 即時進度
+
+```
+Repository      Status       Branches  Tags  Notes
+────────────────────────────────────────────────────
+api-service     ✓  done      4         12
+frontend        ⟳ running    -         -
+auth-service    ⏳ pending    -         -
+legacy-app      ✗  error     -         -    push rejected: 403
+
+[Migration Log]────────────────────────────────────
+[1/4] Migrating api-service …
+  → Cloning (mirror)…
+  → Pushing  (4 branches, 12 tags)…
+  ✓  Done: api-service
+
+[2/4] Migrating frontend …
+  → Created: new-group/frontend
+  → Cloning (mirror)…
+```
+
+遷移在背景執行緒中**循序**處理，介面全程可操作。每個 Repo 的狀態會即時更新。
+
+### TUI 鍵盤快速鍵
+
+| 按鍵 | 功能 |
+|------|------|
+| `q` | 離開應用程式 |
+| `Ctrl+R` | 重新載入 Repo 清單 |
+| `Tab` / 方向鍵 | 在分頁與元件間移動 |
+| `Enter` | 點擊選取的按鈕或列 |
 
 ---
 
@@ -159,6 +258,15 @@ gitmoving migrate ... --reauth-src --reauth-dst
 ---
 
 ## 完整 CLI 選項
+
+```
+gitmoving [COMMAND]
+
+  ui                            啟動互動式 TUI（批次遷移）
+  migrate [OPTIONS]             遷移單一 Repo（命令列）
+  auth status <provider>        查看已儲存憑證
+  auth clear  <provider>        刪除已儲存憑證
+```
 
 ```
 gitmoving migrate [OPTIONS]
