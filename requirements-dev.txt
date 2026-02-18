@@ -1,0 +1,6 @@
+# Development / testing dependencies (not needed at runtime)
+-r requirements.txt
+
+pytest>=8.0
+pytest-qt>=4.4         # Qt/PySide6 test utilities (qtbot fixture)
+pytest-mock>=3.12      # monkeypatch enhancements (optional convenience)
