@@ -268,9 +268,15 @@ def auth_status(provider, label):
 # ---------------------------------------------------------------------------
 
 @main.command()
-def ui():
+@click.option(
+    "--tui",
+    is_flag=True,
+    default=False,
+    help="Use the terminal-based TUI instead of the default Qt desktop GUI.",
+)
+def ui(tui: bool):
     """
-    Launch the interactive Terminal UI.
+    Launch the interactive GUI (default: Qt desktop window).
 
     Provides a three-tab interface:
       Setup        – configure source / destination platforms and credentials
@@ -278,13 +284,22 @@ def ui():
       Migration    – run selected migrations with real-time progress tracking
 
     \b
-    Keyboard shortcuts inside the UI:
+    Qt GUI (default):
+      Mouse clicks to toggle repo selection and navigate tabs
+      Keyboard shortcuts work inside all input fields
+
+    \b
+    Terminal TUI (--tui flag):
       q         Quit
       Ctrl+R    Reload repository list
       Tab / ←→  Navigate between tabs
     """
-    from .ui.app import GitMovingApp
-    GitMovingApp().run()
+    if tui:
+        from .ui.app import GitMovingApp
+        GitMovingApp().run()
+    else:
+        from .ui.qt_app import run_qt_app
+        run_qt_app()
 
 
 if __name__ == "__main__":
